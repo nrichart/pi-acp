@@ -871,6 +871,28 @@ export class PiAcpSession {
   private async handleExtensionUiRequest(ev: PiRpcEvent): Promise<void> {
     const id = stringProp(ev, 'id')
     const method = stringProp(ev, 'method')
+
+    // Handle setStatus events (fire-and-forget, no id needed).
+    // Send as a raw JSON-RPC notification (not session/update) so ACP clients
+    // like agent-shell can pick it up via their notification handler.
+    if (method === 'setStatus') {
+      const statusKey = stringProp(ev, 'statusKey') ?? stringProp(ev, 'key') ?? 'extension'
+      const statusText = stringProp(ev, 'statusText') ?? stringProp(ev, 'value') ?? ''
+      try {
+        await (this.conn as any).sendNotification('extension_ui_request', {
+          method: 'setStatus',
+          statusKey,
+          statusText
+        })
+      } catch {
+        // Best-effort; don't fail if the client doesn't handle it.
+      }
+      if (id) {
+        await this.proc.sendExtensionUiResponse({ id, cancelled: true })
+      }
+      return
+    }
+
     if (!id) {
       return
     }
