@@ -884,6 +884,27 @@ export class PiAcpAgent implements ACPAgent {
 
     const result = await session.prompt(message, images)
 
+    // Emit usage_update after each turn so ACP clients (like agent-shell)
+    // can display token counts, cost, and context usage.
+    try {
+      const stats = (await session.proc.getSessionStats()) as any
+      const t = stats?.tokens
+      const c = stats?.cost
+      if (t && typeof t === 'object') {
+        await this.conn.sessionUpdate({
+          sessionId: session.sessionId,
+          update: {
+            sessionUpdate: 'usage_update',
+            used: typeof t.contextUsed === 'number' ? t.contextUsed : (typeof t.total === 'number' ? t.total : 0),
+            size: typeof t.contextSize === 'number' ? t.contextSize : 0,
+            cost: (c && typeof c.total === 'number') ? { amount: c.total, currency: 'USD' } : undefined
+          }
+        })
+      }
+    } catch {
+      // Usage reporting is best-effort; don't fail the turn if stats are unavailable.
+    }
+
     // ACP StopReason does not include "error"; if pi fails we map to end_turn for now,
     // unless we know this was a cancellation.
     const stopReason: StopReason =
