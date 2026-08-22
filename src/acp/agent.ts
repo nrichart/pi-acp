@@ -401,7 +401,7 @@ export class PiAcpAgent implements ACPAgent {
           const pi = (await session.proc.getCommands()) as any
           const { commands } = toAvailableCommandsFromPiGetCommands(pi, {
             enableSkillCommands,
-            includeExtensionCommands: false
+            includeExtensionCommands: true
           })
 
           await this.conn.sessionUpdate({
@@ -891,12 +891,17 @@ export class PiAcpAgent implements ACPAgent {
       const t = stats?.tokens
       const c = stats?.cost
       if (t && typeof t === 'object') {
+        // Pi's token fields: input, output, cacheRead, cacheWrite, reasoning, totalTokens
+        // No contextUsed/contextSize — use totalTokens as 'used' and 0 as 'size'
+        // (agent-shell shows "n/a" when size is 0 and used is 0)
+        const totalTokens = typeof t.totalTokens === 'number' ? t.totalTokens :
+                            typeof t.total === 'number' ? t.total : 0
         await this.conn.sessionUpdate({
           sessionId: session.sessionId,
           update: {
             sessionUpdate: 'usage_update',
-            used: typeof t.contextUsed === 'number' ? t.contextUsed : (typeof t.total === 'number' ? t.total : 0),
-            size: typeof t.contextSize === 'number' ? t.contextSize : 0,
+            used: totalTokens,
+            size: 0,
             cost: (c && typeof c.total === 'number') ? { amount: c.total, currency: 'USD' } : undefined
           }
         })
@@ -910,7 +915,30 @@ export class PiAcpAgent implements ACPAgent {
     const stopReason: StopReason =
       result === 'error' ? (session.wasCancelRequested() ? 'cancelled' : 'end_turn') : result
 
-    return { stopReason }
+    // Also attach Usage to the PromptResponse for the token breakdown.
+    // The UsageUpdate notification above provides context fill; this provides
+    // per-turn token counts (input, output, cached, etc.).
+    let usage: any = undefined
+    try {
+      const stats = (await session.proc.getSessionStats()) as any
+      const t = stats?.tokens
+      const c = stats?.cost
+      if (t && typeof t === 'object') {
+        usage = {
+          totalTokens: typeof t.totalTokens === 'number' ? t.totalTokens :
+                       typeof t.total === 'number' ? t.total : 0,
+          inputTokens: typeof t.input === 'number' ? t.input : 0,
+          outputTokens: typeof t.output === 'number' ? t.output : 0,
+          thoughtTokens: typeof t.reasoning === 'number' ? t.reasoning : 0,
+          cachedReadTokens: typeof t.cacheRead === 'number' ? t.cacheRead : 0,
+          cachedWriteTokens: typeof t.cacheWrite === 'number' ? t.cacheWrite : 0,
+        }
+      }
+    } catch {
+      // Best-effort
+    }
+
+    return { stopReason, usage }
   }
 
   async cancel(params: CancelNotification): Promise<void> {
@@ -1101,7 +1129,7 @@ export class PiAcpAgent implements ACPAgent {
           const pi = (await proc.getCommands()) as any
           const { commands } = toAvailableCommandsFromPiGetCommands(pi, {
             enableSkillCommands,
-            includeExtensionCommands: false
+            includeExtensionCommands: true
           })
 
           await this.conn.sessionUpdate({

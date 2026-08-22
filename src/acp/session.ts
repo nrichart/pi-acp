@@ -871,6 +871,7 @@ export class PiAcpSession {
   private async handleExtensionUiRequest(ev: PiRpcEvent): Promise<void> {
     const id = stringProp(ev, 'id')
     const method = stringProp(ev, 'method')
+    console.error(`[pi-acp] extension_ui_request: method=${method} id=${id} ev=${JSON.stringify(ev).slice(0, 200)}`)
 
     // Handle setStatus events (fire-and-forget, no id needed).
     // Send as a raw JSON-RPC notification (not session/update) so ACP clients
@@ -991,6 +992,7 @@ export class PiAcpSession {
 
 function extensionUiToolCall(id: string, ev: PiRpcEvent) {
   const method = stringProp(ev, 'method') ?? 'ui'
+    console.error(`[pi-acp] extension_ui_request: method=${method} id=${id} ev=${JSON.stringify(ev).slice(0, 200)}`)
   const title = stringProp(ev, 'title') ?? `Pi ${method}`
   const rawInput: Record<string, unknown> = { method }
 
